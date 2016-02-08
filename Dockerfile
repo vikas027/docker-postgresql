@@ -20,8 +20,7 @@ RUN wget --quiet -O - https://www.postgresql.org/media/keys/ACCC4CF8.asc | apt-k
  && ln -sf ${PG_DATADIR}/postgresql.conf /etc/postgresql/${PG_VERSION}/main/postgresql.conf \
  && ln -sf ${PG_DATADIR}/pg_hba.conf /etc/postgresql/${PG_VERSION}/main/pg_hba.conf \
  && ln -sf ${PG_DATADIR}/pg_ident.conf /etc/postgresql/${PG_VERSION}/main/pg_ident.conf \
- && rm -rf ${PG_HOME} \
- && rm -rf /var/lib/apt/lists/*
+ && rm -rf ${PG_HOME}
 
 COPY runtime/ ${PG_APP_HOME}/
 COPY entrypoint.sh /sbin/entrypoint.sh
@@ -30,4 +29,31 @@ RUN chmod 755 /sbin/entrypoint.sh
 EXPOSE 5432/tcp
 VOLUME ["${PG_HOME}", "${PG_RUNDIR}"]
 WORKDIR ${PG_HOME}
-ENTRYPOINT ["/sbin/entrypoint.sh"]
+#ENTRYPOINT ["/sbin/entrypoint.sh"]
+
+## SSH
+RUN apt-get install -y openssh-server && \
+    sed -i \
+    -e 's/^UsePAM yes/#UsePAM yes/' \
+    -e 's/PermitRootLogin without-password/PermitRootLogin yes/' \
+    /etc/ssh/sshd_config && \
+    mkdir -p /var/run/sshd && \
+    sed -i 's@session\s*required\s*pam_loginuid.so@session optional pam_loginuid.so@g' /etc/pam.d/sshd && \
+    echo 'root:root27' | chpasswd
+ENV NOTVISIBLE "in users profile"
+RUN echo "export VISIBLE=now" >> /etc/profile
+EXPOSE 22
+
+## Supervisor
+RUN apt-get install -y supervisor \
+    && mkdir -p /var/log/supervisor \
+    && chmod -R 777 /var/log/supervisor
+COPY supervisord.conf /etc/supervisor/conf.d/supervisord.conf
+
+## MISC
+RUN apt-get install -y vim perl
+
+## CLEAN UP
+RUN rm -rf /var/lib/apt/lists/*
+
+CMD ["/usr/bin/supervisord", "--configuration=/etc/supervisor/conf.d/supervisord.conf", "--pidfile=/var/run/supervisord.pid"]
